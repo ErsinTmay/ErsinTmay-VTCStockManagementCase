@@ -19,6 +19,7 @@ builder.Services.AddHealthChecks();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
+//DI bağımlılıkları
 builder.Services.AddHostedService<OutboxProcessorHostedService>();
 builder.Services.AddHostedService<CriticalStockHostedService>();
 builder.Services.AddHostedService<DailySalesHostedService>();

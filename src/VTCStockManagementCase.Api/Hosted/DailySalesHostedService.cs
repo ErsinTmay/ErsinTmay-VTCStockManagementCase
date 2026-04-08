@@ -4,9 +4,6 @@ using VTCStockManagementCase.Infrastructure.Persistence;
 
 namespace VTCStockManagementCase.Api.Hosted;
 
-/// <summary>
-/// Ensures daily sales archives are generated for any missing UTC days.
-/// </summary>
 public class DailySalesHostedService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -51,8 +48,7 @@ public class DailySalesHostedService : BackgroundService
             .OrderByDescending(x => x.ReportDate)
             .Select(x => (DateOnly?)x.ReportDate)
             .FirstOrDefaultAsync(cancellationToken);
-
-        // No archive yet: initialize with latest day only to avoid generating unbounded history.
+        
         var nextDate = lastArchived?.AddDays(1) ?? latestTargetDate;
         if (nextDate > latestTargetDate)
             return;
