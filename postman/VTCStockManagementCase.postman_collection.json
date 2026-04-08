@@ -1,0 +1,284 @@
+{
+  "info": {
+    "name": "VTC Stock Management Local Test",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Local test scenarios for VTCStockManagementCase"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5134"
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "orderId2",
+      "value": ""
+    },
+    {
+      "key": "pendingOrderId",
+      "value": ""
+    },
+    {
+      "key": "reportDate",
+      "value": "2026-04-08"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - System",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Outbox Pending Count",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/outbox/pending-count"
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Happy Path (Create -> Reserve -> Success -> Shipping)",
+      "item": [
+        {
+          "name": "Create Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j=pm.response.json();",
+                  "pm.collectionVariables.set('productId',j.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"SKU-LOCAL-001\",\n  \"name\": \"Yerel Test Urunu\",\n  \"description\": \"Postman happy path\"\n}"
+            },
+            "url": "{{baseUrl}}/api/products"
+          }
+        },
+        {
+          "name": "Stock In (+50)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 50,\n  \"reason\": \"Initial load\"\n}"
+            },
+            "url": "{{baseUrl}}/api/inventory/stock-in"
+          }
+        },
+        {
+          "name": "Get Inventory",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/inventory/{{productId}}"
+          }
+        },
+        {
+          "name": "Create Order (qty 2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j=pm.response.json();",
+                  "pm.collectionVariables.set('orderId',j.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"customer-001\",\n  \"items\": [\n    { \"productId\": \"{{productId}}\", \"quantity\": 2 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/orders"
+          }
+        },
+        {
+          "name": "Get Inventory (Reserved)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/inventory/{{productId}}"
+          }
+        },
+        {
+          "name": "Payment Success",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/orders/{{orderId}}/payments/simulate-success"
+          }
+        },
+        {
+          "name": "Get Order Completed",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "Get Shipping Preparation",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/shipping-preparations/{{orderId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Failure Path (Reserve -> Payment Fail -> Release)",
+      "item": [
+        {
+          "name": "Create Order 2 (qty 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j=pm.response.json();",
+                  "pm.collectionVariables.set('orderId2',j.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"customer-002\",\n  \"items\": [\n    { \"productId\": \"{{productId}}\", \"quantity\": 1 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/orders"
+          }
+        },
+        {
+          "name": "Payment Failure",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/orders/{{orderId2}}/payments/simulate-failure"
+          }
+        },
+        {
+          "name": "Get Inventory (After Release)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/inventory/{{productId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Cancel Path (Pending -> Cancel)",
+      "item": [
+        {
+          "name": "Create Pending Order (qty 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j=pm.response.json();",
+                  "pm.collectionVariables.set('pendingOrderId',j.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"customer-003\",\n  \"items\": [\n    { \"productId\": \"{{productId}}\", \"quantity\": 1 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/orders"
+          }
+        },
+        {
+          "name": "Cancel Pending Order",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/orders/{{pendingOrderId}}/cancel"
+          }
+        },
+        {
+          "name": "Get Inventory (After Cancel)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/inventory/{{productId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Reports",
+      "item": [
+        {
+          "name": "Critical Stock Report",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/critical-stock"
+          }
+        },
+        {
+          "name": "Daily Sales Report",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/daily-sales?date={{reportDate}}"
+          }
+        }
+      ]
+    }
+  ]
+}
