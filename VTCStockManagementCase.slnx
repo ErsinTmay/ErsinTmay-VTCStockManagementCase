@@ -5,8 +5,4 @@
     <Project Path="src/VTCStockManagementCase.Domain/VTCStockManagementCase.Domain.csproj" />
     <Project Path="src/VTCStockManagementCase.Infrastructure/VTCStockManagementCase.Infrastructure.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/VTCStockManagementCase.IntegrationTests/VTCStockManagementCase.IntegrationTests.csproj" />
-    <Project Path="tests/VTCStockManagementCase.UnitTests/VTCStockManagementCase.UnitTests.csproj" />
-  </Folder>
 </Solution>

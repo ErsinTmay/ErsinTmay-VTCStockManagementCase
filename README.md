@@ -1,162 +1,142 @@
-# VTCStockManagementCase - Uygulama Kullanım Dokümanı
-
-Bu doküman, projeyi yerelde ayağa kaldırıp uçtan uca test etmeniz için pratik adımları içerir.
-
-## 1) Önkoşullar
-
-- .NET SDK (proje şu an `net10.0` hedefli)
-- Docker Desktop (PostgreSQL ve integration testler için)
-- Postman
-
-## 2) Yerel kurulum
-
-### 2.1 Veritabanını başlat
-
-```bash
-docker compose up -d
-```
-
-### 2.2 Migration uygula
-
-```bash
-export PATH="$PATH:$HOME/.dotnet/tools"
-dotnet ef database update --project src/VTCStockManagementCase.Infrastructure --startup-project src/VTCStockManagementCase.Api
-```
-
-### 2.3 API'yi çalıştır
-
-```bash
-dotnet run --project src/VTCStockManagementCase.Api
-```
-
-Not: Development ortamında ilk açılışta migration uygulanır ve `App:SeedOnStartup=true` ise örnek seed veriler basılır (idempotent).
-
-Varsayılan adres:
-
-- `http://localhost:5134`
-- Swagger: `http://localhost:5134/swagger`
-- Health: `http://localhost:5134/health`
-
-## 3) API uç noktaları (kısa özet)
-
-Aşağıdaki tablolar her endpoint'in ne yaptığını özetler. Tam şema için Swagger kullanın.
-
-### 3.1 Sistem
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **GET** | `/health` | Sağlık kontrolü (basit uptime). |
-
-### 3.2 Ürünler — `api/products`
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **POST** | `/api/products` | Yeni ürün oluşturur (SKU benzersiz olmalı; aksi 409). |
-| **GET** | `/api/products` | Tüm ürünleri listeler. |
-| **GET** | `/api/products/{id}` | ID ile tek ürün; yoksa 404. |
-
-### 3.3 Envanter — `api/inventory`
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **POST** | `/api/inventory/stock-in` | Ürüne stok girişi (`OnHand` artar, stok hareketi yazılır). |
-| **GET** | `/api/inventory/{productId}` | O ürün için OnHand / Reserved / Available; yoksa 404. |
-
-### 3.4 Siparişler — `api/orders`
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **POST** | `/api/orders` | Sipariş oluşturur; atomik rezervasyon; yetersiz stok 409. |
-| **GET** | `/api/orders/{id}` | Sipariş detayı; yoksa 404. |
-| **POST** | `/api/orders/{id}/payments/simulate-success` | Ödeme başarı simülasyonu: stok commit, sipariş Completed, outbox mesajı. |
-| **POST** | `/api/orders/{id}/payments/simulate-failure` | Ödeme başarısız: rezerv iptal, sipariş Failed. |
-| **POST** | `/api/orders/{id}/cancel` | Yalnızca Pending siparişi iptal eder, rezerv iade. |
-
-### 3.5 Kargo hazırlığı — `api/shipping-preparations`
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **GET** | `/api/shipping-preparations/{orderId}` | Outbox işlendikten sonra oluşan hazırlık kaydı; yoksa 404. |
-
-### 3.6 Raporlar — `api/reports`
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **GET** | `/api/reports/daily-sales?date=yyyy-MM-dd` | Arşivlenmiş günlük satış (UTC takvim günü); veri yoksa 404. |
-| **GET** | `/api/reports/critical-stock` | Kritik stok kayıtlarından ürün bazında son tespitler. |
-
-### 3.7 Outbox (gözlem) — `api/outbox`
-
-| Metot | Yol | Özet |
-|--------|-----|------|
-| **GET** | `/api/outbox/pending-count` | İşlenmemiş outbox mesaj sayısı (`pendingCount`). |
-
-## 4) Postman ile test
-
-### 4.1 Dosyaları içe aktar
-
-- `.postman/VTCStockManagementCase.postman_collection.json`
-- `.postman/VTCStockManagementCase.postman_environment.json`
-
-Environment içinde:
-
-- `baseUrl = http://localhost:5134`
-- `reportDate = YYYY-MM-DD` (isteğe göre bugünün veya geçmiş bir günün tarihi)
-
-### 4.2 Önerilen çalışma sırası
-
-Koleksiyon aşağıdaki klasörlerle gelir:
-
-1. `00 - System`
-2. `01 - Happy Path (Create -> Reserve -> Success -> Shipping)`
-3. `02 - Failure Path (Reserve -> Payment Fail -> Release)`
-4. `03 - Cancel Path (Pending -> Cancel)`
-5. `04 - Reports`
-
-Öneri: önce 00 ve 01 klasörlerini, sonra sırasıyla 02, 03 ve 04'ü çalıştırın.
-
-### 4.3 Otomatik değişkenler
-
-Koleksiyon test scriptleri otomatik olarak şunları doldurur:
-
-- `productId`
-- `orderId`
-- `orderId2`
-- `pendingOrderId`
-
-Bu sayede request'leri tek tek manuel kopyalama yapmadan çalıştırabilirsiniz.
-
-## 5) Beklenen davranışlar
-
-- Başarılı ödeme sonrası:
-  - sipariş `Completed`
-  - rezerv düşer, `OnHand` kalıcı azalır
-  - shipping preparation kaydı oluşur
-- Başarısız ödeme sonrası:
-  - sipariş `Failed`
-  - rezerv hemen serbest bırakılır
-- Cancel akışında:
-  - yalnızca `Pending` sipariş iptal edilir
-  - rezerv serbest bırakılır
-
-## 6) Hızlı sorun giderme
-
-- `connection refused`:
-  - API ayakta mı (`dotnet run`)?
-  - `baseUrl` doğru mu?
-- Veritabanı hatası: 
-  - `docker compose ps` ile postgres up mı?
-  - migration uygulandı mı?
-- Shipping kaydı görünmüyor:
-  - ilgili sipariş için `simulate-success` çağrısı yapıldı mı?
-  - `GET /api/outbox/pending-count` ile outbox durumu kontrol edin
-
-## 7) Komut özeti
-
-```bash
-docker compose up -d
-dotnet build
-dotnet run --project src/VTCStockManagementCase.Api
-dotnet test
-```
-
+VTCStockManagementCase uygulama kullanım notu
+
+local çalışmasına uyumlu
+
+sistem gereksinimleri;
+
+.NET SDK lazım proje net10.0 hedefli
+Docker Desktop lazım postgres için
+Postman 
+
+Yerel kurulum
+
+1 veritabanını 
+docker compose up -d
+
+`Host=localhost;Port=5432;Database=vtcstock;Username=postgres;Password=postgres`
+
+2 migration 
+export PATH="$PATH:$HOME/.dotnet/tools"
+dotnet ef database update --project src/VTCStockManagementCase.Infrastructure --startup-project src/VTCStockManagementCase.Api
+
+3 api runß
+dotnet run --project src/VTCStockManagementCase.Api
+
+not development ortamında ilk açılışta migration çalışır eğer App:SeedOnStartup=true ise örnek seed datalar da basılır aynı şeyi tekrar tekrar bozmaz
+
+default adresler
+http://localhost:5134
+swagger için
+http://localhost:5134/swagger
+health için
+http://localhost:5134/health
+
+
+api kısa özet
+
+sistem
+GET /health
+uygulama ayakta mı onu kontrol eder
+
+ürünler api/products
+POST /api/products
+yeni ürün oluşturur sku benzersiz olmalı yoksa 409 döner
+GET /api/products
+tüm ürünleri listeler
+GET /api/products/{id}
+id ye göre tek ürün getirir yoksa 404
+
+envanter api/inventory
+POST /api/inventory/stock-in
+ürüne stok girişi yapar OnHand artar stok hareketi oluşur
+GET /api/inventory/{productId}
+ürünün OnHand Reserved Available bilgisini getirir yoksa 404
+
+siparişler api/orders
+POST /api/orders
+sipariş oluşturur rezervasyon yapar stok yetmiyorsa 409 döner
+GET /api/orders/{id}
+sipariş detayını getirir yoksa 404
+POST /api/orders/{id}/payments/simulate-success
+ödeme başarılı olmuş gibi davranır stok commit olur sipariş Completed olur outbox mesajı oluşur
+POST /api/orders/{id}/payments/simulate-failure
+ödeme başarısız olmuş gibi davranır rezerv iptal edilir sipariş Failed olur
+POST /api/orders/{id}/cancel
+sadece Pending durumundaki siparişi iptal eder rezerv geri bırakılır
+
+kargo hazırlığı api/shipping-preparations
+GET /api/shipping-preparations/{orderId}
+outbox işlendikten sonra oluşan shipping preparation kaydını getirir yoksa 404
+
+raporlar api/reports
+GET /api/reports/daily-sales?date=yyyy-MM-dd
+günlük satış raporunu getirir veri yoksa 404
+GET /api/reports/critical-stock
+kritik stok kayıtlarından ürün bazında son durumu verir
+
+outbox api/outbox
+GET /api/outbox/pending-count
+işlenmemiş outbox mesaj sayısını verir
+
+postman tarafı
+
+şunları import et
+.postman/VTCStockManagementCase.postman_collection.json
+.postman/VTCStockManagementCase.postman_environment.json
+
+environment içinde
+baseUrl = http://localhost:5134
+reportDate = YYYY-MM-DD
+
+çalıştırma sırası olarak bence şöyle gitmek en rahatı
+00 System
+01 Happy Path Create -> Reserve -> Success -> Shipping
+02 Failure Path Reserve -> Payment Fail -> Release
+03 Cancel Path Pending -> Cancel
+04 Reports
+
+önce 00 ve 01 sonra 02 03 04 diye devam etmek mantıklı
+
+koleksiyon bazı değişkenleri otomatik dolduruyor
+productId
+orderId
+orderId2
+pendingOrderId
+
+o yüzden her şeyi elle kopyala yapıştır yapmana çok gerek kalmaz
+
+beklenen davranışlar
+
+ödeme başarılı olursa
+sipariş Completed olur
+rezerv düşer
+OnHand kalıcı azalır
+shipping preparation kaydı oluşur
+
+ödeme başarısız olursa
+sipariş Failed olur
+rezerv hemen serbest kalır
+
+cancel akışında
+sadece Pending sipariş iptal edilir
+rezerv serbest bırakılır
+
+kısa sorun giderme
+
+connection refused alırsan
+api çalışıyor mu dotnet run ile bakılmalı
+baseUrl doğru mu bakılmalı
+
+db hatası varsa
+docker compose ps ile postgres ayakta mı kontrol et
+migration uygulanmış mı bakılmalı
+
+shipping kaydı görünmüyorsa
+ilgili sipariş için simulate-success çağrıldı mı bakılmalı
+GET /api/outbox/pending-count ile outbox bekliyor mu kontrol et
+
+komut özeti
+
+docker compose up -d
+dotnet build
+dotnet run --project src/VTCStockManagementCase.Api
